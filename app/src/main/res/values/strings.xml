@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">AD Drone StreamView</string>
+    <string name="prefs_ip_address">prefs_ip_address</string>
+    <string name="prefs_port_number">prefs_port_number</string>
 </resources>
