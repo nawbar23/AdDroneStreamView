@@ -3,25 +3,50 @@ package com.example.nawba.addronestreamview;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.os.Bundle;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.LinearLayoutCompat;
 import android.text.InputType;
 import android.util.Log;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.EditText;
+import android.widget.ImageView;
 
-public class MainActivity extends AppCompatActivity {
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
-    boolean isSetup = false;
+public class MainActivity extends AppCompatActivity implements StreamConnection.OnNewFrameListener {
+
+    private ImageView imageView;
+    private StreamConnection streamConnection = null;
+
+    private Bitmap bitmap;
+    private Lock bitmapLock = new ReentrantLock();
+
+    private Timer timer;
+
+    private Runnable setImageBitmapRunnable = new Runnable() {
+        @Override
+        public void run() {
+            imageView.setImageBitmap(bitmap);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         setContentView(R.layout.activity_main);
-        if (!isSetup) {
-            startConnectionDialog();
-        }
+
+        startConnectionDialog();
     }
 
     void handleError(String msg) {
@@ -32,7 +57,8 @@ public class MainActivity extends AppCompatActivity {
                 .setMessage(msg)
                 .setPositiveButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface dialog, int which) {
-                        finishAffinity();
+                        dialog.cancel();
+                        startConnectionDialog();
                     }
                 })
                 .setIcon(android.R.drawable.ic_dialog_alert)
@@ -40,6 +66,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     void startConnectionDialog() {
+        Log.i(MainActivity.class.getSimpleName(), "startConnectionDialog");
         final EditText ipInput = new EditText(this);
         ipInput.setInputType(InputType.TYPE_CLASS_PHONE);
         ipInput.setHint("IP address");
@@ -74,6 +101,7 @@ public class MainActivity extends AppCompatActivity {
                             connectStream(ipInput.getText().toString(), Integer.valueOf(portInput.getText().toString()));
                         } catch (NumberFormatException e) {
                             Log.e(MainActivity.class.getSimpleName(), "Wrong port value added!");
+                            handleError("Wrong port value added!");
                         }
                     }
                 })
@@ -98,10 +126,54 @@ public class MainActivity extends AppCompatActivity {
 
     void connectStream(String ip, int port) {
         System.out.println("Connecting stream with ip: " + ip + " port: " + String.valueOf(port));
-        isSetup = true;
         safeConnectionInfo(ip, port);
 
-        // TODO add stream connection and video display
-        handleError("This feature is under development...");
+        streamConnection = new StreamConnection(ip, port, this);
+        imageView = (ImageView) findViewById(R.id.image_view);
+        timer = new Timer();
+
+        streamConnection.start();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (streamConnection != null) {
+            streamConnection.start();
+            timer.scheduleAtFixedRate(new TimerTask() {
+                @Override
+                public void run() {
+                    bitmapLock.lock();
+                    runOnUiThread(setImageBitmapRunnable);
+                    bitmapLock.unlock();
+                }
+            }, 0, 40);
+        }
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        if (streamConnection != null) {
+            streamConnection.disconnect();
+            timer.cancel();
+        }
+    }
+
+    @Override
+    public void setNewFrame(final byte[] array, final int length) {
+        bitmapLock.lock();
+        bitmap = BitmapFactory.decodeByteArray(array, 0, length);
+        bitmapLock.unlock();
+    }
+
+    @Override
+    public void onError(final String message) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                handleError(message);
+            }
+        });
     }
 }
