@@ -22,6 +22,7 @@ public class StreamConnection extends Thread {
 
     public interface OnNewFrameListener {
         void setNewFrame(byte[] array, int length);
+        void onConnected();
         void onError(String message);
     }
 
@@ -40,9 +41,10 @@ public class StreamConnection extends Thread {
         Socket clientSocket = new Socket();
         try {
             clientSocket.connect(new InetSocketAddress(address, port), 5000);
-            Log.i("DDD", "connected, address: " + address);
+            Log.i(StreamConnection.class.getSimpleName(), "connected, address: " + address);
             connected = true;
             DataInputStream dataInputStream = new DataInputStream(clientSocket.getInputStream());
+            listener.onConnected();
 
             byte buffer[] = new byte[4];
             byte imageBuffer[] = new byte[MAX_BUFFER];

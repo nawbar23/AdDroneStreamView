@@ -1,5 +1,6 @@
 package com.example.nawba.addronestreamview;
 
+import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.SharedPreferences;
@@ -24,17 +25,25 @@ import java.util.concurrent.locks.ReentrantLock;
 public class MainActivity extends AppCompatActivity implements StreamConnection.OnNewFrameListener {
 
     private ImageView imageView;
-    private StreamConnection streamConnection = null;
+    private StreamConnection streamConnection;
+
+    private ProgressDialog progressDialog;
 
     private Bitmap bitmap;
     private Lock bitmapLock = new ReentrantLock();
 
     private Timer timer;
-
-    private Runnable setImageBitmapRunnable = new Runnable() {
+    private TimerTask timerUpdateTask = new TimerTask() {
         @Override
         public void run() {
-            imageView.setImageBitmap(bitmap);
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    bitmapLock.lock();
+                    imageView.setImageBitmap(bitmap);
+                    bitmapLock.unlock();
+                }
+            });
         }
     };
 
@@ -45,6 +54,9 @@ public class MainActivity extends AppCompatActivity implements StreamConnection.
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         setContentView(R.layout.activity_main);
+
+        progressDialog = new ProgressDialog(this);
+        progressDialog.setTitle("Connecting...");
 
         startConnectionDialog();
     }
@@ -125,7 +137,9 @@ public class MainActivity extends AppCompatActivity implements StreamConnection.
     }
 
     void connectStream(String ip, int port) {
-        System.out.println("Connecting stream with ip: " + ip + " port: " + String.valueOf(port));
+        Log.i(MainActivity.class.getSimpleName(), "Connecting stream with ip: " + ip + " port: " + String.valueOf(port));
+        progressDialog.show();
+
         safeConnectionInfo(ip, port);
 
         streamConnection = new StreamConnection(ip, port, this);
@@ -137,22 +151,16 @@ public class MainActivity extends AppCompatActivity implements StreamConnection.
 
     @Override
     public void onResume() {
+        Log.i(MainActivity.class.getSimpleName(), "onResume");
         super.onResume();
         if (streamConnection != null) {
             streamConnection.start();
-            timer.scheduleAtFixedRate(new TimerTask() {
-                @Override
-                public void run() {
-                    bitmapLock.lock();
-                    runOnUiThread(setImageBitmapRunnable);
-                    bitmapLock.unlock();
-                }
-            }, 0, 40);
         }
     }
 
     @Override
     public void onPause() {
+        Log.i(MainActivity.class.getSimpleName(), "onPause");
         super.onPause();
         if (streamConnection != null) {
             streamConnection.disconnect();
@@ -168,7 +176,20 @@ public class MainActivity extends AppCompatActivity implements StreamConnection.
     }
 
     @Override
+    public void onConnected() {
+        Log.i(MainActivity.class.getSimpleName(), "onConnected");
+        if (progressDialog.isShowing()) {
+            progressDialog.dismiss();
+        }
+        timer.scheduleAtFixedRate(timerUpdateTask, 0, 40);
+    }
+
+    @Override
     public void onError(final String message) {
+        Log.i(MainActivity.class.getSimpleName(), "onError");
+        if (progressDialog.isShowing()) {
+            progressDialog.dismiss();
+        }
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
